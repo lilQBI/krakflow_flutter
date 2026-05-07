@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'task_repository.dart';
+import 'services/task_api_service.dart';
 void main() {
   runApp(const MyApp());
 }
@@ -336,6 +337,34 @@ class FilterBar extends StatelessWidget {
           child: Text("Wykonane", style: TextStyle(color: selectedFilter == "wykonane" ? Colors.red : Colors.grey)),
         ),
       ],
+    );
+  }
+}
+class TaskListScreen extends StatefulWidget {
+  const TaskListScreen({super.key});
+  @override
+  State<TaskListScreen> createState() => TaskListScreenState();
+}
+
+class TaskListScreenState extends State<TaskListScreen> {
+  late Future<List<Task>> tasksFuture;
+  @override
+  void initState() {
+    super.initState();
+    tasksFuture = TaskApiService.fetchTasks();
+  }
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<Task>>(
+      future: tasksFuture,
+      builder: (context, snapshot) {
+        final tasks = snapshot.data ?? [];
+        return ListView.builder(
+          itemCount: tasks.length,
+          itemBuilder: (context, index) {
+          },
+        );
+      },
     );
   }
 }
