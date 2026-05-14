@@ -1,11 +1,11 @@
 class Task {
-  final String title;
+  final String todo;
   final String deadline;
   bool done;
   final String priority;
 
   Task({
-    required this.title,
+    required this.todo,
     required this.deadline,
     required this.done,
     required this.priority,
@@ -14,9 +14,9 @@ class Task {
 
 class TaskRepository {
   static List<Task> tasks = [
-    Task(title: "Projekt Flutter", deadline: "jutro", done: false, priority: "wysoki"),
-    Task(title: "Oddać raport", deadline: "dzisiaj", done: true, priority: "wysoki"),
-    Task(title: "Powtórzyć widgety", deadline: "w piątek", done: false, priority: "średni"),
-    Task(title: "Notatki do kolokwium", deadline: "w weekend", done: false, priority: "niski"),
+    Task(todo: "Projekt Flutter", deadline: "jutro", done: false, priority: "wysoki"),
+    Task(todo: "Oddać raport", deadline: "dzisiaj", done: true, priority: "wysoki"),
+    Task(todo: "Powtórzyć widgety", deadline: "w piątek", done: false, priority: "średni"),
+    Task(todo: "Notatki do kolokwium", deadline: "w weekend", done: false, priority: "niski"),
   ];
 }
