@@ -1,8 +1,17 @@
 import 'package:flutter/material.dart';
 import 'task_repository.dart';
 import 'services/task_api_service.dart';
+import 'package:hive_ce_flutter/hive_flutter.dart';
+import 'services/task_local_database.dart';
+import 'services/task_sync_service.dart';
+import 'dart:math';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await Hive.initFlutter();
+  await Hive.openBox("tasks");
+
   runApp(const MyApp());
 }
 
@@ -59,6 +68,7 @@ class AddTaskScreen extends StatelessWidget {
             ElevatedButton(
               onPressed: () {
                 final newTask = Task(
+                  id: Random().nextInt(1000000),
                   todo: titleController.text,
                   deadline: deadlineController.text,
                   done: false,
@@ -95,6 +105,7 @@ class EditTaskScreen extends StatelessWidget {
           ElevatedButton(
             onPressed: () {
               Navigator.pop(context, Task(
+                id: task.id,
                 todo: titleController.text,
                 deadline: deadlineController.text,
                 done: task.done,
@@ -119,12 +130,16 @@ class HomeScreen extends StatefulWidget {
 class HomeScreenState extends State<HomeScreen> {
   String selectedFilter = "wszystkie";
   late Future<List<Task>> tasksFuture;
-  List<Task>? localTasks;
 
   @override
   void initState() {
     super.initState();
-    tasksFuture = TaskApiService.fetchTasks();
+    tasksFuture = loadTasks();
+  }
+
+  Future<List<Task>> loadTasks() async {
+    await TaskSyncService.loadInitialDataIfNeeded();
+    return TaskLocalDatabase.getTasks();
   }
 
   @override
@@ -137,7 +152,6 @@ class HomeScreenState extends State<HomeScreen> {
           IconButton(
             icon: const Icon(Icons.delete),
             onPressed: () {
-              if (localTasks != null) {
                 showDialog(
                   context: context,
                   builder: (context) {
@@ -150,9 +164,10 @@ class HomeScreenState extends State<HomeScreen> {
                           child: const Text("Anuluj"),
                         ),
                         TextButton(
-                          onPressed: () {
+                          onPressed: () async {
+                            await TaskLocalDatabase.deleteAllTasks();
                             setState(() {
-                              localTasks!.clear();
+                              tasksFuture = loadTasks();
                             });
                             Navigator.pop(context);
                             ScaffoldMessenger.of(context).showSnackBar(
@@ -166,7 +181,6 @@ class HomeScreenState extends State<HomeScreen> {
                   },
                 );
               }
-            },
           ),
         ],
       ),
@@ -174,22 +188,20 @@ class HomeScreenState extends State<HomeScreen> {
         future: tasksFuture,
         builder: (context, snapshot) {
 
-          if (snapshot.connectionState == ConnectionState.waiting && localTasks == null) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
-
-          if (snapshot.hasError && localTasks == null) {
+          if (snapshot.hasError) {
             return Center(child: Text("Błąd: ${snapshot.error}", style: const TextStyle(color: Colors.red)));
           }
 
-          if (snapshot.hasData || localTasks != null) {
-            localTasks ??= snapshot.data!;
+          final liveTasks = snapshot.data ?? [];
 
-            List<Task> filteredTasks = localTasks!;
+            List<Task> filteredTasks = liveTasks;
             if (selectedFilter == "wykonane") {
-              filteredTasks = localTasks!.where((task) => task.done).toList();
+              filteredTasks = liveTasks.where((task) => task.done).toList();
             } else if (selectedFilter == "do zrobienia") {
-              filteredTasks = localTasks!.where((task) => !task.done).toList();
+              filteredTasks = liveTasks.where((task) => !task.done).toList();
             }
 
             return Padding(
@@ -198,7 +210,7 @@ class HomeScreenState extends State<HomeScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    "Masz dziś: ${localTasks!.length} zadań",
+                    "Masz dziś: ${liveTasks.length} zadań",
                     style: const TextStyle(fontSize: 32),
                   ),
                   const SizedBox(height: 16),
@@ -218,11 +230,12 @@ class HomeScreenState extends State<HomeScreen> {
                         final task = filteredTasks[index];
 
                         return Dismissible(
-                          key: ValueKey(task.todo + task.deadline),
+                          key: ValueKey(task.id),
                           direction: DismissDirection.endToStart,
-                          onDismissed: (direction) {
+                          onDismissed: (direction) async{
+                            await TaskLocalDatabase.deleteTask(task.id);
                             setState(() {
-                              localTasks!.remove(task);
+                              tasksFuture = loadTasks();
                             });
 
                             ScaffoldMessenger.of(context).showSnackBar(
@@ -240,9 +253,17 @@ class HomeScreenState extends State<HomeScreen> {
                             todo: task.todo,
                             subtitle: "termin: ${task.deadline} | priorytet: ${task.priority}",
                             done: task.done,
-                            onChanged: (bool? value) {
+                            onChanged: (bool? value) async {
+                              final updatedTask = Task(
+                                  id: task.id,
+                                  todo: task.todo,
+                                  deadline: task.deadline,
+                                  priority: task.priority,
+                                  done: value ?? false,
+                              );
+                              await TaskLocalDatabase.updateTask(updatedTask);
                               setState(() {
-                                task.done = value!;
+                                tasksFuture = loadTasks();
                               });
                             },
                             onTap: () async {
@@ -253,9 +274,9 @@ class HomeScreenState extends State<HomeScreen> {
                                 ),
                               );
                               if (updatedTask != null) {
+                                await TaskLocalDatabase.updateTask(updatedTask);
                                 setState(() {
-                                  int originalIndex = localTasks!.indexOf(task);
-                                  localTasks![originalIndex] = updatedTask;
+                                  tasksFuture =loadTasks();
                                 });
                               }
                             },
@@ -267,8 +288,6 @@ class HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             );
-          }
-          return const Center(child: Text("Brak zadań do wyświetlenia"));
         },
       ),
       floatingActionButton: FloatingActionButton(
@@ -289,9 +308,10 @@ class HomeScreenState extends State<HomeScreen> {
               },
             ),
           );
-          if (newTask != null && localTasks != null) {
+          if (newTask != null) {
+            await TaskLocalDatabase.addTask(newTask);
             setState(() {
-              localTasks!.add(newTask);
+              tasksFuture = loadTasks();
             });
           }
         },
